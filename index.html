@@ -8,7 +8,6 @@
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://unpkg.com/lucide@latest"></script>
     
     <!-- Firebase -->
     <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
@@ -18,7 +17,6 @@
     <div id="root"></div>
     
     <script type="text/babel">
-        const { Flower2, Sparkles, AlertCircle, Calendar, User, MapPin, Heart, ThumbsUp, PartyPopper, MessageCircle } = lucide;
         const { useState, useEffect } = React;
 
         // Your Firebase configuration
@@ -214,8 +212,7 @@
                                 <div className="space-y-6">
                                     <div>
                                         <label className="flex items-center gap-2 text-sm font-semibold text-gray-700 mb-2">
-                                            <User size={16} />
-                                            Username
+                                            👤 Username
                                         </label>
                                         <input
                                             type="text"
@@ -229,8 +226,7 @@
 
                                     <div>
                                         <label className="flex items-center gap-2 text-sm font-semibold text-gray-700 mb-2">
-                                            <MapPin size={16} />
-                                            Location
+                                            📍 Location
                                         </label>
                                         <input
                                             type="text"
@@ -264,12 +260,10 @@
                             <p className="text-gray-600">Share your daily reflections</p>
                             <div className="mt-4 flex items-center justify-center gap-4 text-sm">
                                 <span className="text-gray-700">
-                                    <User size={16} className="inline mr-1" />
-                                    {username}
+                                    👤 {username}
                                 </span>
                                 <span className="text-gray-700">
-                                    <MapPin size={16} className="inline mr-1" />
-                                    {location}
+                                    📍 {location}
                                 </span>
                                 <button
                                     onClick={handleLogout}
@@ -284,8 +278,7 @@
                             <div className="space-y-6">
                                 <div>
                                     <label className="flex items-center gap-2 text-lg font-semibold text-rose-600 mb-2">
-                                        <Flower2 size={20} />
-                                        Rose - Something great that happened
+                                        🌹 Rose - Something great that happened
                                     </label>
                                     <textarea
                                         value={rose}
@@ -298,8 +291,7 @@
 
                                 <div>
                                     <label className="flex items-center gap-2 text-lg font-semibold text-amber-600 mb-2">
-                                        <Sparkles size={20} />
-                                        Bud - Something you're looking forward to
+                                        ✨ Bud - Something you're looking forward to
                                     </label>
                                     <textarea
                                         value={bud}
@@ -312,8 +304,7 @@
 
                                 <div>
                                     <label className="flex items-center gap-2 text-lg font-semibold text-emerald-700 mb-2">
-                                        <AlertCircle size={20} />
-                                        Thorn - A challenge you faced
+                                        🌵 Thorn - A challenge you faced
                                     </label>
                                     <textarea
                                         value={thorn}
@@ -353,14 +344,13 @@
                                                 <span className="text-gray-600">{entry.location}</span>
                                             </div>
                                             <div className="flex items-center gap-2 text-sm text-gray-500">
-                                                <Calendar size={16} />
-                                                {formatDate(entry.date)}
+                                                📅 {formatDate(entry.date)}
                                             </div>
                                         </div>
 
                                         <div className="space-y-3">
                                             <div className="flex gap-3">
-                                                <Flower2 size={20} className="text-rose-500 flex-shrink-0 mt-0.5" />
+                                                <span className="text-rose-500 flex-shrink-0">🌹</span>
                                                 <div>
                                                     <p className="font-semibold text-rose-600 text-sm">Rose</p>
                                                     <p className="text-gray-700">{entry.rose}</p>
@@ -368,7 +358,7 @@
                                             </div>
 
                                             <div className="flex gap-3">
-                                                <Sparkles size={20} className="text-amber-500 flex-shrink-0 mt-0.5" />
+                                                <span className="text-amber-500 flex-shrink-0">✨</span>
                                                 <div>
                                                     <p className="font-semibold text-amber-600 text-sm">Bud</p>
                                                     <p className="text-gray-700">{entry.bud}</p>
@@ -376,7 +366,7 @@
                                             </div>
 
                                             <div className="flex gap-3">
-                                                <AlertCircle size={20} className="text-emerald-600 flex-shrink-0 mt-0.5" />
+                                                <span className="text-emerald-600 flex-shrink-0">🌵</span>
                                                 <div>
                                                     <p className="font-semibold text-emerald-700 text-sm">Thorn</p>
                                                     <p className="text-gray-700">{entry.thorn}</p>
@@ -391,7 +381,7 @@
                                                     userReactions[`${entry.id}-heart`] ? 'text-red-500' : 'text-gray-600 hover:text-red-500'
                                                 }`}
                                             >
-                                                <Heart size={20} fill={userReactions[`${entry.id}-heart`] ? 'currentColor' : 'none'} />
+                                                <span>{userReactions[`${entry.id}-heart`] ? '❤️' : '🤍'}</span>
                                                 <span className="text-sm">{entry.reactions?.heart || 0}</span>
                                             </button>
                                             <button
@@ -400,7 +390,7 @@
                                                     userReactions[`${entry.id}-like`] ? 'text-blue-500' : 'text-gray-600 hover:text-blue-500'
                                                 }`}
                                             >
-                                                <ThumbsUp size={20} fill={userReactions[`${entry.id}-like`] ? 'currentColor' : 'none'} />
+                                                <span>👍</span>
                                                 <span className="text-sm">{entry.reactions?.like || 0}</span>
                                             </button>
                                             <button
@@ -409,7 +399,7 @@
                                                     userReactions[`${entry.id}-celebrate`] ? 'text-amber-500' : 'text-gray-600 hover:text-amber-500'
                                                 }`}
                                             >
-                                                <PartyPopper size={20} fill={userReactions[`${entry.id}-celebrate`] ? 'currentColor' : 'none'} />
+                                                <span>🎉</span>
                                                 <span className="text-sm">{entry.reactions?.celebrate || 0}</span>
                                             </button>
                                             <button
@@ -418,14 +408,14 @@
                                                     userReactions[`${entry.id}-compassion`] ? 'text-purple-500' : 'text-gray-600 hover:text-purple-500'
                                                 }`}
                                             >
-                                                <Sparkles size={20} fill={userReactions[`${entry.id}-compassion`] ? 'currentColor' : 'none'} />
+                                                <span>🤗</span>
                                                 <span className="text-sm">{entry.reactions?.compassion || 0}</span>
                                             </button>
                                             <button
                                                 onClick={() => setShowComments({ ...showComments, [entry.id]: !showComments[entry.id] })}
                                                 className="flex items-center gap-2 text-gray-600 hover:text-green-500 transition ml-auto"
                                             >
-                                                <MessageCircle size={20} />
+                                                <span>💬</span>
                                                 <span className="text-sm">{entry.comments?.length || 0}</span>
                                             </button>
                                         </div>
@@ -475,7 +465,7 @@
         }
 
         const root = ReactDOM.createRoot(document.getElementById('root'));
-        root.render(<JournalApp />);
+        root.render(React.createElement(JournalApp));
     </script>
 </body>
 </html>
