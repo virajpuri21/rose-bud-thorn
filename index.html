@@ -1,0 +1,481 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Rose, Bud & Thorn Journal</title>
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    
+    <!-- Firebase -->
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
+</head>
+<body>
+    <div id="root"></div>
+    
+    <script type="text/babel">
+        const { Flower2, Sparkles, AlertCircle, Calendar, User, MapPin, Heart, ThumbsUp, PartyPopper, MessageCircle } = lucide;
+        const { useState, useEffect } = React;
+
+        // Your Firebase configuration
+        const firebaseConfig = {
+            apiKey: "AIzaSyBDkSgOGXitR8_--NHu1movVU6QvlpgVzE",
+            authDomain: "rose-bud-thorn-2d9ce.firebaseapp.com",
+            projectId: "rose-bud-thorn-2d9ce",
+            storageBucket: "rose-bud-thorn-2d9ce.firebasestorage.app",
+            messagingSenderId: "583929113592",
+            appId: "1:583929113592:web:4edb80d6f765ef69e7c40d"
+        };
+
+        // Initialize Firebase
+        if (!firebase.apps.length) {
+            firebase.initializeApp(firebaseConfig);
+        }
+        const db = firebase.firestore();
+
+        function JournalApp() {
+            const [entries, setEntries] = useState([]);
+            const [loading, setLoading] = useState(true);
+            const [rose, setRose] = useState('');
+            const [bud, setBud] = useState('');
+            const [thorn, setThorn] = useState('');
+            const [username, setUsername] = useState('');
+            const [location, setLocation] = useState('');
+            const [isLoggedIn, setIsLoggedIn] = useState(false);
+            const [loginUsername, setLoginUsername] = useState('');
+            const [loginLocation, setLoginLocation] = useState('');
+            const [submitting, setSubmitting] = useState(false);
+            const [commentText, setCommentText] = useState({});
+            const [showComments, setShowComments] = useState({});
+            const [userReactions, setUserReactions] = useState({});
+
+            useEffect(() => {
+                checkLogin();
+                loadEntries();
+            }, []);
+
+            const checkLogin = () => {
+                const savedUsername = sessionStorage.getItem('journal_username');
+                const savedLocation = sessionStorage.getItem('journal_location');
+                if (savedUsername && savedLocation) {
+                    setUsername(savedUsername);
+                    setLocation(savedLocation);
+                    setIsLoggedIn(true);
+                }
+            };
+
+            const handleLogin = () => {
+                if (!loginUsername.trim() || !loginLocation.trim()) return;
+                
+                const user = loginUsername.trim();
+                const loc = loginLocation.trim();
+                
+                sessionStorage.setItem('journal_username', user);
+                sessionStorage.setItem('journal_location', loc);
+                
+                setUsername(user);
+                setLocation(loc);
+                setIsLoggedIn(true);
+            };
+
+            const handleLogout = () => {
+                sessionStorage.removeItem('journal_username');
+                sessionStorage.removeItem('journal_location');
+                setUsername('');
+                setLocation('');
+                setIsLoggedIn(false);
+                setRose('');
+                setBud('');
+                setThorn('');
+            };
+
+            const loadEntries = () => {
+                db.collection('entries')
+                    .orderBy('date', 'desc')
+                    .onSnapshot((snapshot) => {
+                        const loadedEntries = [];
+                        snapshot.forEach((doc) => {
+                            loadedEntries.push({ id: doc.id, ...doc.data() });
+                        });
+                        setEntries(loadedEntries);
+                        setLoading(false);
+                    }, (error) => {
+                        console.error('Error loading entries:', error);
+                        setLoading(false);
+                    });
+            };
+
+            const handleSubmit = async () => {
+                if (!rose.trim() || !bud.trim() || !thorn.trim()) return;
+
+                setSubmitting(true);
+                const entry = {
+                    rose: rose.trim(),
+                    bud: bud.trim(),
+                    thorn: thorn.trim(),
+                    username: username,
+                    location: location,
+                    date: firebase.firestore.Timestamp.now(),
+                    reactions: { heart: 0, like: 0, celebrate: 0, compassion: 0 },
+                    comments: []
+                };
+
+                try {
+                    await db.collection('entries').add(entry);
+                    setRose('');
+                    setBud('');
+                    setThorn('');
+                } catch (error) {
+                    console.error('Error saving entry:', error);
+                    alert('Failed to save entry. Please try again.');
+                } finally {
+                    setSubmitting(false);
+                }
+            };
+
+            const handleReaction = async (entryId, reactionType) => {
+                const reactionKey = `${entryId}-${reactionType}`;
+                const hasReacted = userReactions[reactionKey];
+
+                try {
+                    const entryRef = db.collection('entries').doc(entryId);
+                    const entry = entries.find(e => e.id === entryId);
+                    
+                    if (hasReacted) {
+                        await entryRef.update({
+                            [`reactions.${reactionType}`]: (entry.reactions?.[reactionType] || 0) - 1
+                        });
+                        setUserReactions({ ...userReactions, [reactionKey]: false });
+                    } else {
+                        await entryRef.update({
+                            [`reactions.${reactionType}`]: (entry.reactions?.[reactionType] || 0) + 1
+                        });
+                        setUserReactions({ ...userReactions, [reactionKey]: true });
+                    }
+                } catch (error) {
+                    console.error('Error updating reaction:', error);
+                }
+            };
+
+            const handleComment = async (entryId) => {
+                const text = commentText[entryId]?.trim();
+                if (!text) return;
+
+                const newComment = {
+                    id: Date.now().toString(),
+                    username: username,
+                    location: location,
+                    text: text,
+                    date: firebase.firestore.Timestamp.now()
+                };
+
+                try {
+                    const entryRef = db.collection('entries').doc(entryId);
+                    await entryRef.update({
+                        comments: firebase.firestore.FieldValue.arrayUnion(newComment)
+                    });
+                    setCommentText({ ...commentText, [entryId]: '' });
+                } catch (error) {
+                    console.error('Error adding comment:', error);
+                }
+            };
+
+            const formatDate = (timestamp) => {
+                if (!timestamp) return '';
+                const date = timestamp.toDate ? timestamp.toDate() : new Date(timestamp);
+                return date.toLocaleDateString('en-US', { 
+                    month: 'short', 
+                    day: 'numeric', 
+                    year: 'numeric',
+                    hour: 'numeric',
+                    minute: '2-digit'
+                });
+            };
+
+            const isFormValid = rose.trim() && bud.trim() && thorn.trim();
+            const isLoginValid = loginUsername.trim() && loginLocation.trim();
+
+            if (!isLoggedIn) {
+                return (
+                    <div className="min-h-screen bg-gradient-to-br from-rose-50 via-amber-50 to-emerald-50 p-4 flex items-center justify-center">
+                        <div className="max-w-md w-full">
+                            <div className="text-center mb-8">
+                                <h1 className="text-4xl font-bold text-gray-800 mb-2">Rose, Bud & Thorn</h1>
+                                <p className="text-gray-600">Sign in to share your daily reflections</p>
+                            </div>
+
+                            <div className="bg-white rounded-2xl shadow-xl p-8">
+                                <h2 className="text-2xl font-semibold text-gray-800 mb-6">Sign In</h2>
+                                
+                                <div className="space-y-6">
+                                    <div>
+                                        <label className="flex items-center gap-2 text-sm font-semibold text-gray-700 mb-2">
+                                            <User size={16} />
+                                            Username
+                                        </label>
+                                        <input
+                                            type="text"
+                                            value={loginUsername}
+                                            onChange={(e) => setLoginUsername(e.target.value)}
+                                            placeholder="Choose a username"
+                                            className="w-full p-3 border-2 border-gray-200 rounded-lg focus:border-gray-400 focus:outline-none"
+                                            onKeyPress={(e) => e.key === 'Enter' && isLoginValid && handleLogin()}
+                                        />
+                                    </div>
+
+                                    <div>
+                                        <label className="flex items-center gap-2 text-sm font-semibold text-gray-700 mb-2">
+                                            <MapPin size={16} />
+                                            Location
+                                        </label>
+                                        <input
+                                            type="text"
+                                            value={loginLocation}
+                                            onChange={(e) => setLoginLocation(e.target.value)}
+                                            placeholder="City, State or Country"
+                                            className="w-full p-3 border-2 border-gray-200 rounded-lg focus:border-gray-400 focus:outline-none"
+                                            onKeyPress={(e) => e.key === 'Enter' && isLoginValid && handleLogin()}
+                                        />
+                                    </div>
+
+                                    <button
+                                        onClick={handleLogin}
+                                        disabled={!isLoginValid}
+                                        className="w-full bg-gray-600 text-white font-semibold py-3 px-6 rounded-lg hover:bg-gray-700 transition disabled:opacity-50"
+                                    >
+                                        Continue
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                );
+            }
+
+            return (
+                <div className="min-h-screen bg-gradient-to-br from-rose-50 via-amber-50 to-emerald-50 p-4">
+                    <div className="max-w-4xl mx-auto">
+                        <header className="text-center py-8">
+                            <h1 className="text-4xl font-bold text-gray-800 mb-2">Rose, Bud & Thorn</h1>
+                            <p className="text-gray-600">Share your daily reflections</p>
+                            <div className="mt-4 flex items-center justify-center gap-4 text-sm">
+                                <span className="text-gray-700">
+                                    <User size={16} className="inline mr-1" />
+                                    {username}
+                                </span>
+                                <span className="text-gray-700">
+                                    <MapPin size={16} className="inline mr-1" />
+                                    {location}
+                                </span>
+                                <button
+                                    onClick={handleLogout}
+                                    className="text-gray-600 hover:text-gray-800 underline"
+                                >
+                                    Sign Out
+                                </button>
+                            </div>
+                        </header>
+
+                        <div className="bg-white rounded-2xl shadow-xl p-6 mb-8">
+                            <div className="space-y-6">
+                                <div>
+                                    <label className="flex items-center gap-2 text-lg font-semibold text-rose-600 mb-2">
+                                        <Flower2 size={20} />
+                                        Rose - Something great that happened
+                                    </label>
+                                    <textarea
+                                        value={rose}
+                                        onChange={(e) => setRose(e.target.value)}
+                                        placeholder="What made you smile today?"
+                                        className="w-full p-3 border-2 border-rose-200 rounded-lg focus:border-rose-400 focus:outline-none resize-none"
+                                        rows="3"
+                                    />
+                                </div>
+
+                                <div>
+                                    <label className="flex items-center gap-2 text-lg font-semibold text-amber-600 mb-2">
+                                        <Sparkles size={20} />
+                                        Bud - Something you're looking forward to
+                                    </label>
+                                    <textarea
+                                        value={bud}
+                                        onChange={(e) => setBud(e.target.value)}
+                                        placeholder="What are you excited about?"
+                                        className="w-full p-3 border-2 border-amber-200 rounded-lg focus:border-amber-400 focus:outline-none resize-none"
+                                        rows="3"
+                                    />
+                                </div>
+
+                                <div>
+                                    <label className="flex items-center gap-2 text-lg font-semibold text-emerald-700 mb-2">
+                                        <AlertCircle size={20} />
+                                        Thorn - A challenge you faced
+                                    </label>
+                                    <textarea
+                                        value={thorn}
+                                        onChange={(e) => setThorn(e.target.value)}
+                                        placeholder="What was difficult today?"
+                                        className="w-full p-3 border-2 border-emerald-200 rounded-lg focus:border-emerald-400 focus:outline-none resize-none"
+                                        rows="3"
+                                    />
+                                </div>
+
+                                <button
+                                    onClick={handleSubmit}
+                                    disabled={submitting || !isFormValid}
+                                    className="w-full bg-gray-600 text-white font-semibold py-3 px-6 rounded-lg hover:bg-gray-700 transition disabled:opacity-50"
+                                >
+                                    {submitting ? 'Sharing...' : 'Share Entry'}
+                                </button>
+                            </div>
+                        </div>
+
+                        <div className="space-y-4">
+                            <h2 className="text-2xl font-bold text-gray-800 mb-4">Community Reflections</h2>
+                            
+                            {loading ? (
+                                <div className="text-center py-8 text-gray-500">Loading entries...</div>
+                            ) : entries.length === 0 ? (
+                                <div className="text-center py-8 text-gray-500">
+                                    No entries yet. Be the first to share!
+                                </div>
+                            ) : (
+                                entries.map((entry) => (
+                                    <div key={entry.id} className="bg-white rounded-xl shadow-lg p-6 space-y-4">
+                                        <div className="flex items-center justify-between mb-4">
+                                            <div className="flex items-center gap-2">
+                                                <span className="font-semibold text-gray-800">{entry.username}</span>
+                                                <span className="text-gray-400">·</span>
+                                                <span className="text-gray-600">{entry.location}</span>
+                                            </div>
+                                            <div className="flex items-center gap-2 text-sm text-gray-500">
+                                                <Calendar size={16} />
+                                                {formatDate(entry.date)}
+                                            </div>
+                                        </div>
+
+                                        <div className="space-y-3">
+                                            <div className="flex gap-3">
+                                                <Flower2 size={20} className="text-rose-500 flex-shrink-0 mt-0.5" />
+                                                <div>
+                                                    <p className="font-semibold text-rose-600 text-sm">Rose</p>
+                                                    <p className="text-gray-700">{entry.rose}</p>
+                                                </div>
+                                            </div>
+
+                                            <div className="flex gap-3">
+                                                <Sparkles size={20} className="text-amber-500 flex-shrink-0 mt-0.5" />
+                                                <div>
+                                                    <p className="font-semibold text-amber-600 text-sm">Bud</p>
+                                                    <p className="text-gray-700">{entry.bud}</p>
+                                                </div>
+                                            </div>
+
+                                            <div className="flex gap-3">
+                                                <AlertCircle size={20} className="text-emerald-600 flex-shrink-0 mt-0.5" />
+                                                <div>
+                                                    <p className="font-semibold text-emerald-700 text-sm">Thorn</p>
+                                                    <p className="text-gray-700">{entry.thorn}</p>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <div className="flex items-center gap-6 pt-4 border-t border-gray-100">
+                                            <button
+                                                onClick={() => handleReaction(entry.id, 'heart')}
+                                                className={`flex items-center gap-2 transition ${
+                                                    userReactions[`${entry.id}-heart`] ? 'text-red-500' : 'text-gray-600 hover:text-red-500'
+                                                }`}
+                                            >
+                                                <Heart size={20} fill={userReactions[`${entry.id}-heart`] ? 'currentColor' : 'none'} />
+                                                <span className="text-sm">{entry.reactions?.heart || 0}</span>
+                                            </button>
+                                            <button
+                                                onClick={() => handleReaction(entry.id, 'like')}
+                                                className={`flex items-center gap-2 transition ${
+                                                    userReactions[`${entry.id}-like`] ? 'text-blue-500' : 'text-gray-600 hover:text-blue-500'
+                                                }`}
+                                            >
+                                                <ThumbsUp size={20} fill={userReactions[`${entry.id}-like`] ? 'currentColor' : 'none'} />
+                                                <span className="text-sm">{entry.reactions?.like || 0}</span>
+                                            </button>
+                                            <button
+                                                onClick={() => handleReaction(entry.id, 'celebrate')}
+                                                className={`flex items-center gap-2 transition ${
+                                                    userReactions[`${entry.id}-celebrate`] ? 'text-amber-500' : 'text-gray-600 hover:text-amber-500'
+                                                }`}
+                                            >
+                                                <PartyPopper size={20} fill={userReactions[`${entry.id}-celebrate`] ? 'currentColor' : 'none'} />
+                                                <span className="text-sm">{entry.reactions?.celebrate || 0}</span>
+                                            </button>
+                                            <button
+                                                onClick={() => handleReaction(entry.id, 'compassion')}
+                                                className={`flex items-center gap-2 transition ${
+                                                    userReactions[`${entry.id}-compassion`] ? 'text-purple-500' : 'text-gray-600 hover:text-purple-500'
+                                                }`}
+                                            >
+                                                <Sparkles size={20} fill={userReactions[`${entry.id}-compassion`] ? 'currentColor' : 'none'} />
+                                                <span className="text-sm">{entry.reactions?.compassion || 0}</span>
+                                            </button>
+                                            <button
+                                                onClick={() => setShowComments({ ...showComments, [entry.id]: !showComments[entry.id] })}
+                                                className="flex items-center gap-2 text-gray-600 hover:text-green-500 transition ml-auto"
+                                            >
+                                                <MessageCircle size={20} />
+                                                <span className="text-sm">{entry.comments?.length || 0}</span>
+                                            </button>
+                                        </div>
+
+                                        {showComments[entry.id] && (
+                                            <div className="pt-4 border-t border-gray-100 space-y-4">
+                                                {entry.comments && entry.comments.length > 0 && (
+                                                    <div className="space-y-3">
+                                                        {entry.comments.map((comment) => (
+                                                            <div key={comment.id} className="bg-gray-50 rounded-lg p-3">
+                                                                <div className="flex items-center gap-2 mb-1">
+                                                                    <span className="font-semibold text-sm text-gray-800">{comment.username}</span>
+                                                                    <span className="text-gray-400">·</span>
+                                                                    <span className="text-xs text-gray-500">{comment.location}</span>
+                                                                    <span className="text-xs text-gray-400 ml-auto">{formatDate(comment.date)}</span>
+                                                                </div>
+                                                                <p className="text-gray-700 text-sm">{comment.text}</p>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                )}
+                                                <div className="flex gap-2">
+                                                    <input
+                                                        type="text"
+                                                        value={commentText[entry.id] || ''}
+                                                        onChange={(e) => setCommentText({ ...commentText, [entry.id]: e.target.value })}
+                                                        placeholder="Add a comment..."
+                                                        className="flex-1 p-2 border-2 border-gray-200 rounded-lg focus:border-gray-400 focus:outline-none text-sm"
+                                                        onKeyPress={(e) => e.key === 'Enter' && handleComment(entry.id)}
+                                                    />
+                                                    <button
+                                                        onClick={() => handleComment(entry.id)}
+                                                        className="bg-gray-600 text-white px-4 py-2 rounded-lg hover:bg-gray-700 transition text-sm font-semibold"
+                                                    >
+                                                        Post
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+                                ))
+                            )}
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<JournalApp />);
+    </script>
+</body>
+</html>
