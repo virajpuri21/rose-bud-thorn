@@ -20,7 +20,6 @@
     <script type="text/babel">
         const { useState, useEffect } = React;
 
-        // Your Firebase configuration
         const firebaseConfig = {
             apiKey: "AIzaSyBDkSgOGXitR8_--NHu1movVU6QvlpgVzE",
             authDomain: "rose-bud-thorn-2d9ce.firebaseapp.com",
@@ -30,7 +29,6 @@
             appId: "1:583929113592:web:4edb80d6f765ef69e7c40d"
         };
 
-        // Initialize Firebase
         if (!firebase.apps.length) {
             firebase.initializeApp(firebaseConfig);
         }
@@ -52,9 +50,15 @@
             const [commentText, setCommentText] = useState({});
             const [showComments, setShowComments] = useState({});
             const [userReactions, setUserReactions] = useState({});
+            const [currentDateTime, setCurrentDateTime] = useState(new Date());
+            const [isPrivate, setIsPrivate] = useState(false);
+            const [menuOpen, setMenuOpen] = useState(false);
+            const [currentView, setCurrentView] = useState('community');
+            const [userSettings, setUserSettings] = useState({ emailNotifications: true });
+            const [showShareModal, setShowShareModal] = useState(false);
+            const [shareEmail, setShareEmail] = useState('');
 
             useEffect(() => {
-                // Clear any old session storage from previous version
                 sessionStorage.removeItem('journal_username');
                 sessionStorage.removeItem('journal_location');
 
@@ -62,13 +66,43 @@
                     setUser(user);
                     if (user) {
                         loadEntries();
+                        loadUserSettings(user.uid);
                     } else {
                         setLoading(false);
                     }
                 });
 
-                return () => unsubscribe();
+                const timer = setInterval(() => {
+                    setCurrentDateTime(new Date());
+                }, 1000);
+
+                return () => {
+                    unsubscribe();
+                    clearInterval(timer);
+                };
             }, []);
+
+            const loadUserSettings = async (userId) => {
+                try {
+                    const doc = await db.collection('userSettings').doc(userId).get();
+                    if (doc.exists) {
+                        setUserSettings(doc.data());
+                    }
+                } catch (error) {
+                    console.error('Error loading user settings:', error);
+                }
+            };
+
+            const toggleNotifications = async () => {
+                const newSettings = { ...userSettings, emailNotifications: !userSettings.emailNotifications };
+                setUserSettings(newSettings);
+                
+                try {
+                    await db.collection('userSettings').doc(user.uid).set(newSettings);
+                } catch (error) {
+                    console.error('Error saving notification settings:', error);
+                }
+            };
 
             const loadEntries = () => {
                 db.collection('entries')
@@ -84,6 +118,13 @@
                         console.error('Error loading entries:', error);
                         setLoading(false);
                     });
+            };
+
+            const sendNotificationEmail = async (recipientEmail, notificationType, entryData) => {
+                console.log(`📧 Email notification would be sent to: ${recipientEmail}`);
+                console.log(`Type: ${notificationType}`);
+                console.log(`Entry data:`, entryData);
+                // In production: integrate with SendGrid, Mailgun, or Firebase Cloud Functions
             };
 
             const handleAuth = async (e) => {
@@ -134,6 +175,7 @@
                     setRose('');
                     setBud('');
                     setThorn('');
+                    setCurrentView('community');
                 } catch (error) {
                     console.error('Error signing out:', error);
                 }
@@ -151,7 +193,8 @@
                     userId: user.uid,
                     date: firebase.firestore.Timestamp.now(),
                     reactions: { heart: 0, like: 0, celebrate: 0, compassion: 0 },
-                    comments: []
+                    comments: [],
+                    isPrivate: isPrivate
                 };
 
                 try {
@@ -159,6 +202,7 @@
                     setRose('');
                     setBud('');
                     setThorn('');
+                    setIsPrivate(false);
                 } catch (error) {
                     console.error('Error saving entry:', error);
                     alert('Failed to save entry. Please try again.');
@@ -185,6 +229,16 @@
                             [`reactions.${reactionType}`]: (entry.reactions?.[reactionType] || 0) + 1
                         });
                         setUserReactions({ ...userReactions, [reactionKey]: true });
+                        
+                        if (entry.userId !== user.uid) {
+                            const ownerSettingsDoc = await db.collection('userSettings').doc(entry.userId).get();
+                            const ownerSettings = ownerSettingsDoc.data();
+                            
+                            if (ownerSettings?.emailNotifications) {
+                                await sendNotificationEmail(entry.userEmail, 'reaction',
+                                    { reactionType, reactorEmail: user.email, entry });
+                            }
+                        }
                     }
                 } catch (error) {
                     console.error('Error updating reaction:', error);
@@ -205,13 +259,41 @@
 
                 try {
                     const entryRef = db.collection('entries').doc(entryId);
+                    const entry = entries.find(e => e.id === entryId);
+                    
                     await entryRef.update({
                         comments: firebase.firestore.FieldValue.arrayUnion(newComment)
                     });
                     setCommentText({ ...commentText, [entryId]: '' });
+                    
+                    if (entry.userId !== user.uid) {
+                        const ownerSettingsDoc = await db.collection('userSettings').doc(entry.userId).get();
+                        const ownerSettings = ownerSettingsDoc.data();
+                        
+                        if (ownerSettings?.emailNotifications) {
+                            await sendNotificationEmail(entry.userEmail, 'comment',
+                                { commenterEmail: user.email, commentText: text, entry });
+                        }
+                    }
                 } catch (error) {
                     console.error('Error adding comment:', error);
                 }
+            };
+
+            const handleShareViaEmail = () => {
+                const subject = encodeURIComponent('Check out Rose, Bud & Thorn Journal!');
+                const body = encodeURIComponent(
+                    `I've been using Rose, Bud & Thorn Journal to reflect on my daily experiences. Join me!\n\n${window.location.href}`
+                );
+                
+                if (shareEmail.trim()) {
+                    window.location.href = `mailto:${shareEmail}?subject=${subject}&body=${body}`;
+                } else {
+                    window.location.href = `mailto:?subject=${subject}&body=${body}`;
+                }
+                
+                setShareEmail('');
+                setShowShareModal(false);
             };
 
             const formatDate = (timestamp) => {
@@ -226,16 +308,32 @@
                 });
             };
 
-            // Helper function to display user info for entries (handles both old and new format)
+            const formatCurrentDateTime = () => {
+                const options = {
+                    weekday: 'long',
+                    year: 'numeric',
+                    month: 'long',
+                    day: 'numeric',
+                    hour: 'numeric',
+                    minute: '2-digit',
+                    second: '2-digit'
+                };
+                return currentDateTime.toLocaleDateString('en-US', options);
+            };
+
             const getUserDisplay = (entry) => {
-                if (entry.userEmail) {
-                    return entry.userEmail;
-                } else if (entry.username && entry.location) {
-                    return `${entry.username} • ${entry.location}`;
-                } else if (entry.username) {
-                    return entry.username;
-                }
+                if (entry.userEmail) return entry.userEmail;
+                if (entry.username && entry.location) return `${entry.username} • ${entry.location}`;
+                if (entry.username) return entry.username;
                 return 'Anonymous User';
+            };
+
+            const getFilteredEntries = () => {
+                if (currentView === 'myEntries') {
+                    return entries.filter(entry => entry.userId === user.uid);
+                } else {
+                    return entries.filter(entry => !entry.isPrivate || entry.userId === user.uid);
+                }
             };
 
             const isFormValid = rose.trim() && bud.trim() && thorn.trim();
@@ -258,7 +356,7 @@
                                 <form onSubmit={handleAuth} className="space-y-6">
                                     <div>
                                         <label className="flex items-center gap-2 text-sm font-semibold text-gray-700 mb-2">
-                                           ✉️ Email
+                                            ✉️ Email
                                         </label>
                                         <input
                                             type="email"
@@ -319,88 +417,204 @@
             return (
                 <div className="min-h-screen bg-gradient-to-br from-rose-50 via-amber-50 to-emerald-50 p-4">
                     <div className="max-w-4xl mx-auto">
+                        <div className="flex justify-between items-start mb-4">
+                            <div className="relative">
+                                <button
+                                    onClick={() => setMenuOpen(!menuOpen)}
+                                    className="bg-white rounded-lg shadow-md px-4 py-2 text-gray-700 hover:bg-gray-50 transition"
+                                >
+                                    ☰ Menu
+                                </button>
+                                
+                                {menuOpen && (
+                                    <div className="absolute top-12 left-0 bg-white rounded-lg shadow-xl border border-gray-200 w-64 z-10">
+                                        <button
+                                            onClick={() => {
+                                                setCurrentView('myEntries');
+                                                setMenuOpen(false);
+                                            }}
+                                            className="w-full text-left px-4 py-3 hover:bg-gray-50 flex items-center gap-2 border-b border-gray-100"
+                                        >
+                                            📝 My Entries
+                                        </button>
+                                        <button
+                                            onClick={() => {
+                                                setShowShareModal(true);
+                                                setMenuOpen(false);
+                                            }}
+                                            className="w-full text-left px-4 py-3 hover:bg-gray-50 flex items-center gap-2 border-b border-gray-100"
+                                        >
+                                            🎉 Share the Joy
+                                        </button>
+                                        <button
+                                            onClick={() => {
+                                                toggleNotifications();
+                                            }}
+                                            className="w-full text-left px-4 py-3 hover:bg-gray-50 flex items-center gap-2"
+                                        >
+                                            {userSettings.emailNotifications ? '🔔' : '🔕'} Email Notifications: {userSettings.emailNotifications ? 'ON' : 'OFF'}
+                                        </button>
+                                        {currentView === 'myEntries' && (
+                                            <button
+                                                onClick={() => {
+                                                    setCurrentView('community');
+                                                    setMenuOpen(false);
+                                                }}
+                                                className="w-full text-left px-4 py-3 hover:bg-gray-50 flex items-center gap-2 border-t border-gray-100"
+                                            >
+                                                🌍 Back to Community
+                                            </button>
+                                        )}
+                                    </div>
+                                )}
+                            </div>
+
+                            <div className="bg-white rounded-lg shadow-md px-4 py-2 text-sm text-gray-700">
+                                🕐 {formatCurrentDateTime()}
+                            </div>
+                        </div>
+
+                        {showShareModal && (
+                            <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+                                <div className="bg-white rounded-2xl shadow-2xl p-8 max-w-md w-full">
+                                    <h3 className="text-2xl font-bold text-gray-800 mb-4">Share the Joy! 🎉</h3>
+                                    <p className="text-gray-600 mb-6">
+                                        Invite friends to join Rose, Bud & Thorn Journal
+                                    </p>
+                                    <div className="mb-4">
+                                        <label className="text-sm font-semibold text-gray-700 mb-2 block">
+                                            Email Address (Optional)
+                                        </label>
+                                        <input
+                                            type="email"
+                                            value={shareEmail}
+                                            onChange={(e) => setShareEmail(e.target.value)}
+                                            placeholder="friend@example.com"
+                                            className="w-full p-3 border-2 border-gray-200 rounded-lg focus:border-gray-400 focus:outline-none"
+                                        />
+                                    </div>
+                                    <div className="flex gap-3">
+                                        <button
+                                            onClick={handleShareViaEmail}
+                                            className="flex-1 bg-gray-600 text-white font-semibold py-3 px-6 rounded-lg hover:bg-gray-700 transition"
+                                        >
+                                            Send Email
+                                        </button>
+                                        <button
+                                            onClick={() => {
+                                                setShowShareModal(false);
+                                                setShareEmail('');
+                                            }}
+                                            className="flex-1 bg-gray-200 text-gray-700 font-semibold py-3 px-6 rounded-lg hover:bg-gray-300 transition"
+                                        >
+                                            Cancel
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
                         <header className="text-center py-8">
                             <h1 className="text-4xl font-bold text-gray-800 mb-2">Rose, Bud & Thorn</h1>
-                            <p className="text-gray-600">Share your daily reflections</p>
+                            <p className="text-gray-600">
+                                {currentView === 'myEntries' ? 'Your Personal Reflections' : 'Share your daily reflections'}
+                            </p>
                             <div className="mt-4 flex items-center justify-center gap-4 text-sm">
-                                <span className="text-gray-700">
-                                    ✉️ {user.email}
-                                </span>
-                                <button
-                                    onClick={handleLogout}
-                                    className="text-gray-600 hover:text-gray-800 underline"
-                                >
+                                <span className="text-gray-700">✉️ {user.email}</span>
+                                <button onClick={handleLogout} className="text-gray-600 hover:text-gray-800 underline">
                                     Sign Out
                                 </button>
                             </div>
                         </header>
 
-                        <div className="bg-white rounded-2xl shadow-xl p-6 mb-8">
-                            <div className="space-y-6">
-                                <div>
-                                    <label className="flex items-center gap-2 text-lg font-semibold text-rose-600 mb-2">
-                                        🌹 Rose - Something great that happened
-                                    </label>
-                                    <textarea
-                                        value={rose}
-                                        onChange={(e) => setRose(e.target.value)}
-                                        placeholder="What made you smile today?"
-                                        className="w-full p-3 border-2 border-rose-200 rounded-lg focus:border-rose-400 focus:outline-none resize-none"
-                                        rows="3"
-                                    />
-                                </div>
+                        {currentView === 'community' && (
+                            <div className="bg-white rounded-2xl shadow-xl p-6 mb-8">
+                                <div className="space-y-6">
+                                    <div>
+                                        <label className="flex items-center gap-2 text-lg font-semibold text-rose-600 mb-2">
+                                            🌹 Rose - Something great that happened
+                                        </label>
+                                        <textarea
+                                            value={rose}
+                                            onChange={(e) => setRose(e.target.value)}
+                                            placeholder="What made you smile today?"
+                                            className="w-full p-3 border-2 border-rose-200 rounded-lg focus:border-rose-400 focus:outline-none resize-none"
+                                            rows="3"
+                                        />
+                                    </div>
 
-                                <div>
-                                    <label className="flex items-center gap-2 text-lg font-semibold text-amber-600 mb-2">
-                                        ✨ Bud - Something you're looking forward to
-                                    </label>
-                                    <textarea
-                                        value={bud}
-                                        onChange={(e) => setBud(e.target.value)}
-                                        placeholder="What are you excited about?"
-                                        className="w-full p-3 border-2 border-amber-200 rounded-lg focus:border-amber-400 focus:outline-none resize-none"
-                                        rows="3"
-                                    />
-                                </div>
+                                    <div>
+                                        <label className="flex items-center gap-2 text-lg font-semibold text-amber-600 mb-2">
+                                            ✨ Bud - Something you're looking forward to
+                                        </label>
+                                        <textarea
+                                            value={bud}
+                                            onChange={(e) => setBud(e.target.value)}
+                                            placeholder="What are you excited about?"
+                                            className="w-full p-3 border-2 border-amber-200 rounded-lg focus:border-amber-400 focus:outline-none resize-none"
+                                            rows="3"
+                                        />
+                                    </div>
 
-                                <div>
-                                    <label className="flex items-center gap-2 text-lg font-semibold text-emerald-700 mb-2">
-                                        🌵 Thorn - A challenge you faced
-                                    </label>
-                                    <textarea
-                                        value={thorn}
-                                        onChange={(e) => setThorn(e.target.value)}
-                                        placeholder="What was difficult today?"
-                                        className="w-full p-3 border-2 border-emerald-200 rounded-lg focus:border-emerald-400 focus:outline-none resize-none"
-                                        rows="3"
-                                    />
-                                </div>
+                                    <div>
+                                        <label className="flex items-center gap-2 text-lg font-semibold text-emerald-700 mb-2">
+                                            🌵 Thorn - A challenge you faced
+                                        </label>
+                                        <textarea
+                                            value={thorn}
+                                            onChange={(e) => setThorn(e.target.value)}
+                                            placeholder="What was difficult today?"
+                                            className="w-full p-3 border-2 border-emerald-200 rounded-lg focus:border-emerald-400 focus:outline-none resize-none"
+                                            rows="3"
+                                        />
+                                    </div>
 
-                                <button
-                                    onClick={handleSubmit}
-                                    disabled={submitting || !isFormValid}
-                                    className="w-full bg-gray-600 text-white font-semibold py-3 px-6 rounded-lg hover:bg-gray-700 transition disabled:opacity-50"
-                                >
-                                    {submitting ? 'Sharing...' : 'Share Entry'}
-                                </button>
+                                    <div className="flex items-center gap-4">
+                                        <button
+                                            onClick={() => setIsPrivate(!isPrivate)}
+                                            className={`flex items-center gap-2 px-4 py-2 rounded-lg border-2 transition ${
+                                                isPrivate 
+                                                    ? 'bg-purple-100 border-purple-400 text-purple-700' 
+                                                    : 'bg-blue-100 border-blue-400 text-blue-700'
+                                            }`}
+                                        >
+                                            {isPrivate ? '🔒 Just for Me' : '🌍 Share with Community'}
+                                        </button>
+                                    </div>
+
+                                    <button
+                                        onClick={handleSubmit}
+                                        disabled={submitting || !isFormValid}
+                                        className="w-full bg-gray-600 text-white font-semibold py-3 px-6 rounded-lg hover:bg-gray-700 transition disabled:opacity-50"
+                                    >
+                                        {submitting ? 'Saving...' : 'Save Entry'}
+                                    </button>
+                                </div>
                             </div>
-                        </div>
+                        )}
 
                         <div className="space-y-4">
-                            <h2 className="text-2xl font-bold text-gray-800 mb-4">Community Reflections</h2>
+                            <h2 className="text-2xl font-bold text-gray-800 mb-4">
+                                {currentView === 'myEntries' ? 'My Entries' : 'Community Reflections'}
+                            </h2>
                             
                             {loading ? (
                                 <div className="text-center py-8 text-gray-500">Loading entries...</div>
-                            ) : entries.length === 0 ? (
+                            ) : getFilteredEntries().length === 0 ? (
                                 <div className="text-center py-8 text-gray-500">
-                                    No entries yet. Be the first to share!
+                                    {currentView === 'myEntries' 
+                                        ? "You haven't created any entries yet."
+                                        : "No entries yet. Be the first to share!"}
                                 </div>
                             ) : (
-                                entries.map((entry) => (
+                                getFilteredEntries().map((entry) => (
                                     <div key={entry.id} className="bg-white rounded-xl shadow-lg p-6 space-y-4">
                                         <div className="flex items-center justify-between mb-4">
                                             <div className="flex items-center gap-2">
                                                 <span className="font-semibold text-gray-800">{getUserDisplay(entry)}</span>
+                                                {entry.isPrivate && (
+                                                    <span className="text-xs bg-purple-100 text-purple-700 px-2 py-1 rounded">🔒 Private</span>
+                                                )}
                                             </div>
                                             <div className="flex items-center gap-2 text-sm text-gray-500">
                                                 📅 {formatDate(entry.date)}
