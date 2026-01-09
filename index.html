@@ -54,6 +54,10 @@
             const [userReactions, setUserReactions] = useState({});
 
             useEffect(() => {
+                // Clear any old session storage from previous version
+                sessionStorage.removeItem('journal_username');
+                sessionStorage.removeItem('journal_location');
+
                 const unsubscribe = auth.onAuthStateChanged((user) => {
                     setUser(user);
                     if (user) {
@@ -211,6 +215,18 @@
                     hour: 'numeric',
                     minute: '2-digit'
                 });
+            };
+
+            // Helper function to display user info for entries (handles both old and new format)
+            const getUserDisplay = (entry) => {
+                if (entry.userEmail) {
+                    return entry.userEmail;
+                } else if (entry.username && entry.location) {
+                    return `${entry.username} • ${entry.location}`;
+                } else if (entry.username) {
+                    return entry.username;
+                }
+                return 'Anonymous User';
             };
 
             const isFormValid = rose.trim() && bud.trim() && thorn.trim();
@@ -375,7 +391,7 @@
                                     <div key={entry.id} className="bg-white rounded-xl shadow-lg p-6 space-y-4">
                                         <div className="flex items-center justify-between mb-4">
                                             <div className="flex items-center gap-2">
-                                                <span className="font-semibold text-gray-800">{entry.userEmail}</span>
+                                                <span className="font-semibold text-gray-800">{getUserDisplay(entry)}</span>
                                             </div>
                                             <div className="flex items-center gap-2 text-sm text-gray-500">
                                                 📅 {formatDate(entry.date)}
@@ -461,7 +477,9 @@
                                                         {entry.comments.map((comment) => (
                                                             <div key={comment.id} className="bg-gray-50 rounded-lg p-3">
                                                                 <div className="flex items-center gap-2 mb-1">
-                                                                    <span className="font-semibold text-sm text-gray-800">{comment.userEmail}</span>
+                                                                    <span className="font-semibold text-sm text-gray-800">
+                                                                        {comment.userEmail || (comment.username && comment.location ? `${comment.username} • ${comment.location}` : 'Anonymous')}
+                                                                    </span>
                                                                     <span className="text-xs text-gray-400 ml-auto">{formatDate(comment.date)}</span>
                                                                 </div>
                                                                 <p className="text-gray-700 text-sm">{comment.text}</p>
