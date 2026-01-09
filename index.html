@@ -11,6 +11,7 @@
     
     <!-- Firebase -->
     <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
 </head>
 <body>
@@ -34,6 +35,7 @@
             firebase.initializeApp(firebaseConfig);
         }
         const db = firebase.firestore();
+        const auth = firebase.auth();
 
         function JournalApp() {
             const [entries, setEntries] = useState([]);
@@ -41,55 +43,28 @@
             const [rose, setRose] = useState('');
             const [bud, setBud] = useState('');
             const [thorn, setThorn] = useState('');
-            const [username, setUsername] = useState('');
-            const [location, setLocation] = useState('');
-            const [isLoggedIn, setIsLoggedIn] = useState(false);
-            const [loginUsername, setLoginUsername] = useState('');
-            const [loginLocation, setLoginLocation] = useState('');
+            const [user, setUser] = useState(null);
+            const [email, setEmail] = useState('');
+            const [password, setPassword] = useState('');
+            const [isSignUp, setIsSignUp] = useState(false);
+            const [authError, setAuthError] = useState('');
             const [submitting, setSubmitting] = useState(false);
             const [commentText, setCommentText] = useState({});
             const [showComments, setShowComments] = useState({});
             const [userReactions, setUserReactions] = useState({});
 
             useEffect(() => {
-                checkLogin();
-                loadEntries();
+                const unsubscribe = auth.onAuthStateChanged((user) => {
+                    setUser(user);
+                    if (user) {
+                        loadEntries();
+                    } else {
+                        setLoading(false);
+                    }
+                });
+
+                return () => unsubscribe();
             }, []);
-
-            const checkLogin = () => {
-                const savedUsername = sessionStorage.getItem('journal_username');
-                const savedLocation = sessionStorage.getItem('journal_location');
-                if (savedUsername && savedLocation) {
-                    setUsername(savedUsername);
-                    setLocation(savedLocation);
-                    setIsLoggedIn(true);
-                }
-            };
-
-            const handleLogin = () => {
-                if (!loginUsername.trim() || !loginLocation.trim()) return;
-                
-                const user = loginUsername.trim();
-                const loc = loginLocation.trim();
-                
-                sessionStorage.setItem('journal_username', user);
-                sessionStorage.setItem('journal_location', loc);
-                
-                setUsername(user);
-                setLocation(loc);
-                setIsLoggedIn(true);
-            };
-
-            const handleLogout = () => {
-                sessionStorage.removeItem('journal_username');
-                sessionStorage.removeItem('journal_location');
-                setUsername('');
-                setLocation('');
-                setIsLoggedIn(false);
-                setRose('');
-                setBud('');
-                setThorn('');
-            };
 
             const loadEntries = () => {
                 db.collection('entries')
@@ -107,16 +82,60 @@
                     });
             };
 
+            const handleAuth = async (e) => {
+                e.preventDefault();
+                setAuthError('');
+                
+                try {
+                    if (isSignUp) {
+                        await auth.createUserWithEmailAndPassword(email, password);
+                    } else {
+                        await auth.signInWithEmailAndPassword(email, password);
+                    }
+                    setEmail('');
+                    setPassword('');
+                } catch (error) {
+                    let errorMessage = 'An error occurred. Please try again.';
+                    
+                    if (error.code === 'auth/email-already-in-use') {
+                        errorMessage = 'This email is already registered. Please sign in instead.';
+                    } else if (error.code === 'auth/weak-password') {
+                        errorMessage = 'Password should be at least 6 characters.';
+                    } else if (error.code === 'auth/invalid-email') {
+                        errorMessage = 'Please enter a valid email address.';
+                    } else if (error.code === 'auth/user-not-found') {
+                        errorMessage = 'No account found with this email. Please sign up.';
+                    } else if (error.code === 'auth/wrong-password') {
+                        errorMessage = 'Incorrect password. Please try again.';
+                    } else if (error.code === 'auth/invalid-credential') {
+                        errorMessage = 'Invalid email or password. Please try again.';
+                    }
+                    
+                    setAuthError(errorMessage);
+                }
+            };
+
+            const handleLogout = async () => {
+                try {
+                    await auth.signOut();
+                    setRose('');
+                    setBud('');
+                    setThorn('');
+                } catch (error) {
+                    console.error('Error signing out:', error);
+                }
+            };
+
             const handleSubmit = async () => {
-                if (!rose.trim() || !bud.trim() || !thorn.trim()) return;
+                if (!rose.trim() || !bud.trim() || !thorn.trim() || !user) return;
 
                 setSubmitting(true);
                 const entry = {
                     rose: rose.trim(),
                     bud: bud.trim(),
                     thorn: thorn.trim(),
-                    username: username,
-                    location: location,
+                    userEmail: user.email,
+                    userId: user.uid,
                     date: firebase.firestore.Timestamp.now(),
                     reactions: { heart: 0, like: 0, celebrate: 0, compassion: 0 },
                     comments: []
@@ -161,12 +180,12 @@
 
             const handleComment = async (entryId) => {
                 const text = commentText[entryId]?.trim();
-                if (!text) return;
+                if (!text || !user) return;
 
                 const newComment = {
                     id: Date.now().toString(),
-                    username: username,
-                    location: location,
+                    userEmail: user.email,
+                    userId: user.uid,
                     text: text,
                     date: firebase.firestore.Timestamp.now()
                 };
@@ -195,55 +214,75 @@
             };
 
             const isFormValid = rose.trim() && bud.trim() && thorn.trim();
-            const isLoginValid = loginUsername.trim() && loginLocation.trim();
+            const isAuthValid = email.trim() && password.trim();
 
-            if (!isLoggedIn) {
+            if (!user) {
                 return (
                     <div className="min-h-screen bg-gradient-to-br from-rose-50 via-amber-50 to-emerald-50 p-4 flex items-center justify-center">
                         <div className="max-w-md w-full">
                             <div className="text-center mb-8">
                                 <h1 className="text-4xl font-bold text-gray-800 mb-2">Rose, Bud & Thorn</h1>
-                                <p className="text-gray-600">Sign in to share your daily reflections</p>
+                                <p className="text-gray-600">Share your daily reflections</p>
                             </div>
 
                             <div className="bg-white rounded-2xl shadow-xl p-8">
-                                <h2 className="text-2xl font-semibold text-gray-800 mb-6">Sign In</h2>
+                                <h2 className="text-2xl font-semibold text-gray-800 mb-6">
+                                    {isSignUp ? 'Create Account' : 'Sign In'}
+                                </h2>
                                 
-                                <div className="space-y-6">
+                                <form onSubmit={handleAuth} className="space-y-6">
                                     <div>
                                         <label className="flex items-center gap-2 text-sm font-semibold text-gray-700 mb-2">
-                                            👤 Username
+                                            ✉️ Email
                                         </label>
                                         <input
-                                            type="text"
-                                            value={loginUsername}
-                                            onChange={(e) => setLoginUsername(e.target.value)}
-                                            placeholder="Choose a username"
+                                            type="email"
+                                            value={email}
+                                            onChange={(e) => setEmail(e.target.value)}
+                                            placeholder="your.email@example.com"
                                             className="w-full p-3 border-2 border-gray-200 rounded-lg focus:border-gray-400 focus:outline-none"
-                                            onKeyPress={(e) => e.key === 'Enter' && isLoginValid && handleLogin()}
                                         />
                                     </div>
 
                                     <div>
                                         <label className="flex items-center gap-2 text-sm font-semibold text-gray-700 mb-2">
-                                            📍 Location
+                                            🔒 Password
                                         </label>
                                         <input
-                                            type="text"
-                                            value={loginLocation}
-                                            onChange={(e) => setLoginLocation(e.target.value)}
-                                            placeholder="City, State or Country"
+                                            type="password"
+                                            value={password}
+                                            onChange={(e) => setPassword(e.target.value)}
+                                            placeholder={isSignUp ? "At least 6 characters" : "Enter your password"}
                                             className="w-full p-3 border-2 border-gray-200 rounded-lg focus:border-gray-400 focus:outline-none"
-                                            onKeyPress={(e) => e.key === 'Enter' && isLoginValid && handleLogin()}
                                         />
                                     </div>
+
+                                    {authError && (
+                                        <div className="bg-red-50 border-2 border-red-200 rounded-lg p-3 text-sm text-red-700">
+                                            {authError}
+                                        </div>
+                                    )}
 
                                     <button
-                                        onClick={handleLogin}
-                                        disabled={!isLoginValid}
+                                        type="submit"
+                                        disabled={!isAuthValid}
                                         className="w-full bg-gray-600 text-white font-semibold py-3 px-6 rounded-lg hover:bg-gray-700 transition disabled:opacity-50"
                                     >
-                                        Continue
+                                        {isSignUp ? 'Sign Up' : 'Sign In'}
+                                    </button>
+                                </form>
+
+                                <div className="mt-6 text-center">
+                                    <button
+                                        onClick={() => {
+                                            setIsSignUp(!isSignUp);
+                                            setAuthError('');
+                                        }}
+                                        className="text-gray-600 hover:text-gray-800 underline text-sm"
+                                    >
+                                        {isSignUp 
+                                            ? 'Already have an account? Sign in' 
+                                            : "Don't have an account? Sign up"}
                                     </button>
                                 </div>
                             </div>
@@ -260,10 +299,7 @@
                             <p className="text-gray-600">Share your daily reflections</p>
                             <div className="mt-4 flex items-center justify-center gap-4 text-sm">
                                 <span className="text-gray-700">
-                                    👤 {username}
-                                </span>
-                                <span className="text-gray-700">
-                                    📍 {location}
+                                    ✉️ {user.email}
                                 </span>
                                 <button
                                     onClick={handleLogout}
@@ -339,9 +375,7 @@
                                     <div key={entry.id} className="bg-white rounded-xl shadow-lg p-6 space-y-4">
                                         <div className="flex items-center justify-between mb-4">
                                             <div className="flex items-center gap-2">
-                                                <span className="font-semibold text-gray-800">{entry.username}</span>
-                                                <span className="text-gray-400">·</span>
-                                                <span className="text-gray-600">{entry.location}</span>
+                                                <span className="font-semibold text-gray-800">{entry.userEmail}</span>
                                             </div>
                                             <div className="flex items-center gap-2 text-sm text-gray-500">
                                                 📅 {formatDate(entry.date)}
@@ -427,9 +461,7 @@
                                                         {entry.comments.map((comment) => (
                                                             <div key={comment.id} className="bg-gray-50 rounded-lg p-3">
                                                                 <div className="flex items-center gap-2 mb-1">
-                                                                    <span className="font-semibold text-sm text-gray-800">{comment.username}</span>
-                                                                    <span className="text-gray-400">·</span>
-                                                                    <span className="text-xs text-gray-500">{comment.location}</span>
+                                                                    <span className="font-semibold text-sm text-gray-800">{comment.userEmail}</span>
                                                                     <span className="text-xs text-gray-400 ml-auto">{formatDate(comment.date)}</span>
                                                                 </div>
                                                                 <p className="text-gray-700 text-sm">{comment.text}</p>
